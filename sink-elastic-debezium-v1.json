@@ -1,0 +1,22 @@
+{
+  "name": "elasticsearch-sink-connector-dbz",
+  "config": {
+    "connector.class": "io.confluent.connect.elasticsearch.ElasticsearchSinkConnector",
+    "topics": "fullfillment.test.utilisateurs",
+    "connection.url": "http://elasticsearch:9200",
+    "tasks.max": "1",
+    
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    
+    "key.ignore": "true",
+    "schema.ignore": "true",
+    "type.name": "",
+    "behavior.on.null.values": "delete",
+    "write.method": "upsert",
+    "transforms": "unwrap",
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": "false"
+  }
+}
