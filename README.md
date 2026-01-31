@@ -35,6 +35,16 @@ It will help you to deploy and test a simple **streaming** pipeline using **Dock
 * Browser: **Opera 126.x**
 * Others versions: in **compose.yml**
 
+## PORTS
+
+- **Postgres**: Default -> `5432`, Exposed -> `5432`
+- **Portainer**: Default -> `443`, Exposed -> `7443`
+- **Connect**: Default -> `8083`, Exposed -> `8083`
+- **Kafka**: Default -> `9092`, Exposed -> `9092`
+- **Pgadmin**: Default -> `80`, Exposed -> `5050`
+- **Elasticsearch**: Default -> `9200`, Exposed -> `9200`
+- **Kibana**: Default -> `5601`, Exposed -> `5601`
+
 ## Install
 
 ### Docker (if not already installed)
@@ -172,7 +182,6 @@ psql -h postgres -p 5432 -U user -d db_tickets -W # password in compose.yml
 | **\d [table]** | `Décrire la structure d'une table spécifique.` |
 | **\conninfo** | `Afficher les détails de la connexion actuelle.` |
 | **\q** | `Quitter psql.` |
-`
 
 ---
 
@@ -223,10 +232,155 @@ RESULT
 
 ## Streaming ingestion
 
+**Tunnel**
+<p align="center">
+    <picture>
+        <source media="(prefers-color-scheme: light dark)" srcset="images/Archi_tunnel.drawio.png">
+        <img src="images/Archi_tunnel.drawio.png" alt="archii_tunnel" width="700">
+    </picture>
+</p>
+
+Data are ingest from `Postgres DB` to `Elasticsaerch` throw `Kafka Tunnel`</br>
+You can use **[KSQL](https://www.confluent.io/product/ksqldb/)** (real-time processing), to process data in flight inside `kafka` via SQL-like commands
+
 ### kafka
 
+After setup your docker stack, you can use commands to manage `kafka` or use any UI solution
+
+```bash
+# Some Commands (you can run all these commands inside kafka container)
+# first move to folder /opt/kafka/bin
+
+# list all topics
+./kafka-topics.sh --list --bootstrap-server localhost:9092
+
+# create a topic (not necessary in this case)
+./kafka-topics.sh --create --topic {topic-name} --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
+
+# Describe a topic
+./kafka-topics.sh --describe --topic {topic-name} --bootstrap-server localhost:9092
+
+# Consume data in kafka tunnel (from the beginning)
+./kafka-console-consumer.sh --topic {topic-name} --from-beginning --bootstrap-server localhost:9092
+
+# Produce some data and send them throw kafka tunnel
+./kafka-console-producer.sh --topic {topic-name} --bootstrap-server localhost:9092
+
+# Alter some kafka topic properties
+./kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type topics --entity-name {topic-name} --add-config retention.ms=3600000
+
+```
 ---
 
 ### Connect
 
+there are two types:
+- **Source**: Pull data from sources (Postrgres)
+- **Sink**: Push data into destination (Elasticsearch)
+
+`Debezium` and `Confluent` host many connectors
+the Service section of `Connect` in `compose.yml` boot the container and install all libs connectors for `Postgres` and `Elasticsearch`
+
+libs are located in `/usr/share/confluent-hub-components`
+
+Tou can access and manage connectors throw `API Rest` locate at the address `http://localhost:8083` and use `CURL` in commands line with methods `GET`, `POST`, `PUT`, `DELETE` ...
+
+In other to submit or deploy each connector, we used `json` file.
+- `source-postgres-debezium.json` for source
+- `sink-elastic-debezium.json` for Destination
+`connector-name` is locate inside each `json` file or can be listed using the command bellow
+
+```bash
+# Some Commands (you can run all these commands inside or outside connect container)
+
+# list of existing connectors:
+curl -s -X GET http://localhost:8083/connector-plugins | jq '.[].class'
+
+# list of active (Deploy) connectors:
+curl -s http://localhost:8083/connectors | jq
+
+# submit source connector
+curl -X POST http://localhost:8083/connectors -H "Content-Type: application/json" -d @source-postgres-debezium.json
+
+# submit sink connector
+curl -s http://localhost:8083/connectors/elasticsearch-sink-connector-dbz/status | jq
+
+# pause a connector
+curl -X PUT http://localhost:8083/connectors/{connector-name}/pause
+
+# stop a connector
+curl -X PUT http://localhost:8083/connectors/{connector-name}/stop
+
+# delete a connector
+curl -X DELETE http://localhost:8083/connectors/{connector-name}
+
+# Reset offsets
+curl -X DELETE http://localhost:8083/connectors/{connector-name}/offsets
+
+# Resume a connector
+curl -X PUT http://localhost:8083/connectors/{connector-name}/resume
+
+```
+
+## Destination
+
+### Elasticsearch
+
+```bash
+# Some Commands
+
+# check status cluster:
+curl -s http://localhost:9200/_cluster/health?pretty
+
+# list all available nodes:
+curl -s http://localhost:9200/_cat/nodes?v
+
+# cluster stats
+curl -s http://localhost:9200/_cluster/stats
+
+# check index:
+curl -s http://localhost:9200/_cat/indices?v
+
+# create index:
+curl -X PUT "http://localhost:9200/{index-name}" -H 'Content-Type: application/json' -d '{"settings": {"number_of_shards": 1}}'
+
+# delete index
+curl -X DELETE "http://localhost:9200/{index-name}"
+
+# mapping schema index
+curl -s http://localhost:9200/{index-name}/_mapping
+
+# Add/Replace DOC
+curl -X PUT "http://localhost:9200/{index-name}/_doc/1" -H 'Content-Type: application/json' -d '{ "nom": "Elastic", "type": "Search" }'
+
+# Retreive _doc data
+curl -s http://localhost:9200/{index-name}/_doc/1
+
+# Delete a Doc
+curl -X DELETE "http://localhost:9200/{index-name}/_doc/1"
+
+# find - match
+curl -X GET "http://localhost:9200/{index-name}/_search" -H 'Content-Type: application/json' -d '{ "query": { "match_all": {} } }'
+
+```
+
 ---
+
+### KIBANA
+
+**URL**: `http://localhost:5601`
+
+<p align="center">
+    <picture>
+        <source media="(prefers-color-scheme: light dark)" srcset="images/Screenshot_kibana.png">
+        <img src="images/Screenshot_kibana.png" alt="archii_tunnel" width="700">
+    </picture>
+</p>
+
+1- **index mapping**: create an index mapping inside kibana
+2- **visualisation**: set of  panels
+3- **Panel**: each one contain a graph
+
+---
+
+Enjoy!!
